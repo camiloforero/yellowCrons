@@ -128,7 +128,7 @@ load_dict = {
 
 def andes_daily_load():
     print("Cargando en " + str(datetime.now()))
-    ex_api = expaApi.ExpaApi(fail_attempts=10)
+    ex_api = expaApi.ExpaApi(account='kevin.gonzalez@aiesec.net', fail_attempts=10)
     bd_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net', fail_attempts=10)
     for function, kwargs in load_dict.items():
         try:

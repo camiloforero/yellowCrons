@@ -10,6 +10,87 @@ def parse_date(old_date):
     datetime.strptime('%Y-%m-%d')
 
 
+def multidaily_open_load():
+    date = datetime.now().strftime('%Y-%m-%d')
+    kwargs = {'interaction':'registered', 'start_date': date,
+        'officeID': 2010, 'program': 'ogx', 'end_date': date}
+    bd_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net', fail_attempts=10)
+    load_bangladesh_ogx_opens_v2(bd_api.get_interactions(**kwargs), ex_api=bd_api)
+
+
+def load_bangladesh_ogx_opens_v2(people, *args, **kwargs):
+    """
+    This method loads all new oGX opens into the PODIO workspace. It works a bit differently than the usual; it also autoassigns EP managers to each EP it loads through EXPA before saving them in PODIO. This requires taking an extra step
+    This one method also searches for duplicates in PODIO before loading them.
+    """
+    p_api = api.PodioApi(19156174)
+    active_managers = models.Member.objects.filter(is_active=True).order_by('?')
+    manager_index = 0 #The current VP who will be assigned to the next EP 
+
+    for raw_person in people['items']:
+        # search is this person is already under PODIO
+        #TODO: PODIO sarch
+        search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=raw_person['id'])
+        if len(search['results']) >= 1: #Found exactly one, as it should be
+            print("%d result was already found, skipping" % len(search['results']))
+            continue 
+        else:
+            current_manager = []
+            if len(raw_person['managers']) > 0:
+                for manager in raw_person['managers']:
+                    mn_id = unicode(manager['id'])
+                    try:
+                        current_manager == active_managers.get(expa_id=mn_id)
+                        print("There was already at least one EP manager, %s will be assigned" % manager['full_name'])
+                        continue
+                    except models.Member.DoesNotExist:
+                        continue
+            if len(current_manager) == 0:
+                current_manager = active_managers[manager_index]
+                manager_index = (manager_index + 1) % len(active_managers)
+            print("Updating %s (expa_id %s) with EP manager %s" % (raw_person['full_name'], raw_person['id'], current_manager.name)) 
+            person = kwargs['ex_api'].update_person(unicode(raw_person['id']), {"manager_ids": [current_manager.expa_id]})
+            print("EXPA success, starting PODIO load")
+            try:
+                referral_type = person['referral_type']
+                if referral_type is None or referral_type == "":
+                    referral_type = "Other"
+                if person['profile_completeness']['gv']:
+                    profile_complete = "Yes"
+                else:
+                    profile_complete = "No"
+                attributes = {
+                    151791638: {'value': person['first_name']},
+                    151795763: {'value': person['last_name']},
+                    151795764: {'value': unicode(person['id'])},
+                    151795765: {'value':{'id': current_manager.podio_id, 'type':'user'}},
+                    151950042: {'start_utc': person['created_at'].replace('T', ' ').replace('Z', '')},
+                    151795766: {'type': 'work', 'value': person['email']},
+                    151795772: {'value': person['home_lc']['name']},
+                    151795769: {'value': '0 - Uncontacted'},
+                    151818116: {'value': referral_type},
+                    159966006: profile_complete,
+                    }
+                if(person['dob']):
+                    attributes[154339943] = {'start_date': person['dob']}
+                if(person['contact_info']):
+                    attributes[151795768] = {'type': 'mobile', 'value': '%s%s' % (person['contact_info']['country_code'], person['contact_info']['phone'])},
+                if(len(person['academic_experiences']) > 0):
+                    attributes[151832581] = person['academic_experiences'][0]['organisation_name'] 
+            except Exception as e:
+                print("Argument load unsuccessful, check item for errors")
+                print(e)
+                print(person)
+                raise e
+            try:
+                p_api.create_item({'fields':attributes})
+                print("Se ha agregado a %s al espacio de OGX de opens" % person['email'])
+            except Exception as e:
+                print(e)
+                print("Error adding %s (expa_id %s) to the Bangladesh opens space" % (person['full_name'], person['id']))
+                continue
+
+
 def load_bangladesh_ogx_opens(people, *args, **kwargs):
     """
     This method loads all new oGX opens into the PODIO workspace. It works a bit differently than the usual; it also autoassigns EP managers to each EP it loads through EXPA before saving them in PODIO. This requires taking an extra step
@@ -119,6 +200,9 @@ def load_bangladesh_ogx_apps(apps, *args, **kwargs):
             if len(search['results']) == 1: #Found exactly one, as it should be
                 item_id = search['results'][0]['id']
                 item = p_api.get_item(item_id, external_id=False)
+                stage = item['values'][151795769]['value']
+                stage_number = int(stage.split(' - ')[0])
+                print(stage)
 
                 if 167580470 not in item['values']:
                     update_params[167580470] = 0
@@ -154,14 +238,12 @@ def load_bangladesh_ogx_apps(apps, *args, **kwargs):
                         email.send_mail(from_email, to_email, context)
                         p_api.comment('item', item_id, {'value': "An email has been sent successfully, for first application, from %s to %s" % (from_email, to_email)})
                     except Exception as e:
-                        p_api.comment('item', item_id, {'value': "Warning: There was an error sending the email: %s . Check this out @[%s](user:%s)" % (e, di_responsible['name'],di_responsible['user_id']) })
+#                        p_api.comment('item', item_id, {'value': "Warning: There was an error sending the email: %s . Check this out @[%s](user:%s)" % (e, di_responsible['name'],di_responsible['user_id']) })
+                        pass
                         #comment
-                stage = item['values'][151795769]['value']
-                stage_number = int(stage.split(' - ')[0])
-                print(stage)
                 if stage_number <= -5:
                     print("EP is not elegible for exchange, but has applied. @[Camilo Forero](user:1707071)")
-                    p_api.comment('item', item_id, {'value': "INFO: An ep who is inelegible for exchange has applied in EXPA. Check it out @[%s](user:%s) @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id'], ogx_responsible['name'], ogx_responsible['user_id']) })
+#                    p_api.comment('item', item_id, {'value': "INFO: An ep who is inelegible for exchange has applied in EXPA. Check it out @[%s](user:%s) @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id'], ogx_responsible['name'], ogx_responsible['user_id']) })
                 elif stage_number <= 0:
                     update_params[151795769] = '0 - Applied at least once AND UNCONTACTED'
                     p_api.comment('item', item_id, {'value': "INFO: An uncontacted EP has applied to an opportunity. Follow up should be prioritized."  })
@@ -208,7 +290,11 @@ def load_bangladesh_ogx_apps(apps, *args, **kwargs):
                 )})
 
 
-def load_bangladesh_ogx_accepted(apps, ex_api, *args, **kwargs):
+def load_bangladesh_ogx_accepted(apps, ex_api, date, *args, **kwargs):
+    """
+    Loads all accepted EPs into PODIO
+    has an extra argument date because the API doesn't show easily the acceptance date when grabbing a group of acceptances.
+    """
     p_api = api.PodioApi(19156174)
     modified_eps = {}
     for app in apps['items']:
@@ -218,8 +304,11 @@ def load_bangladesh_ogx_accepted(apps, ex_api, *args, **kwargs):
             if len(search['results']) == 1: #Found exactly one, as it should be
                 item_id = search['results'][0]['id']
                 item = p_api.get_item(item_id, external_id=False)
-                accepted_date = {'start_date': app['updated_at'].split('T')[0]},
-                p_api.updateItem(item_id, {159728808: accepted_date})
+                update_dict = {
+                    169759824: {'start_date': date},
+                }
+                if 159728808 not in item['values']:
+                    update_dict[159728808] = {'start_date': date}
                 stage = item['values'][151795769]['value']
                 stage_number = int(stage.split(' - ')[0])
                 print(stage)
@@ -227,13 +316,14 @@ def load_bangladesh_ogx_accepted(apps, ex_api, *args, **kwargs):
                     print("EP is not elegible for exchange, ignoring...")
                     p_api.comment('item', item_id, {'value': "ALERT: An ep who was marked as inelegible in PODIO has been accepted in EXPA. This case should bechecked immediately @[Camilo Forero](user:1707071) @[Louise Kim](user:888570)"})
                 elif stage_number <= 0:
-                    p_api.updateItem(item_id, {151795769:'0 - ACCEPTED AND UNCONTACTED'})
+                    update_dict[151795769] = '0 - ACCEPTED AND UNCONTACTED'
                     print("EP has been accepted while being uncontacted, updated")
                 elif stage_number == 1 or stage_number == 2 or stage_number == 3:
-                    p_api.updateItem(item_id, {151795769:'4 - Contacted and accepted at least once', 154339943:{'start_date':app['person']['dob']}})
+                    update_dict[151795769] = '4 - Contacted and accepted at least once'
                     print("EP has been accepted, updated")
                 elif stage_number > 3:
                     print("This EP has already been accepted, or more, ignoring...")
+                p_api.updateItem(item_id, update_dict)
             elif len(search['results']) == 0: #Found 0, not ideal but not unexpected, gotta create it and generate a warning
                 attributes = {
                     151791638:app['person']['first_name'],
@@ -288,9 +378,9 @@ def load_bangladesh_ogx_approved(apps, ex_api, *args, **kwargs):
                 item = p_api.get_item(item_id, external_id=False)
                 #checks for the existance of the initialized variables
                 if 151795765 in item['values']:
-                    tl_responsible = item['values'][151795765]['value']['user_id']
+                    tl_responsible = item['values'][151795765]
                 if 151795767 in item['values']:
-                    tm_responsible = item['values'][151795767]['value']['user_id']
+                    tm_responsible = item['values'][151795767]
                 if 151832580 in item['values']:
                     university = item['values'][151832580]['value']
                 if 162269470 in item['values']:
@@ -352,6 +442,7 @@ def load_bangladesh_ogx_approved(apps, ex_api, *args, **kwargs):
                 app['opportunity']['office']['country'],
                 app['opportunity']['id']
                 )})
+        comment = "Please update the realization date of this EP "
         attributes_2 = { # This is for creating a new approval at the VD space
             157131079:app['person']['first_name'],
             157141792:app['person']['last_name'],
@@ -367,72 +458,71 @@ def load_bangladesh_ogx_approved(apps, ex_api, *args, **kwargs):
             157141796:{'start_utc':app['date_approved'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
             }
         if tl_responsible:
-            attributes_2[157144215] = {'value':{'id': tl_responsible, 'type':'user'}},
+            attributes_2[157144215] = {'value':{'id': tl_responsible['value']['user_id'], 'type':'user'}},
+            comment += tools.tag_from_podio_contacts(tl_responsible)
         if tm_responsible:
-            attributes_2[157144216] = {'value':{'id': tm_responsible, 'type':'user'}},
+            attributes_2[157144216] = {'value':{'id': tm_responsible['value']['user_id'], 'type':'user'}},
+            comment += tools.tag_from_podio_contacts(tm_responsible)
         if university:
             attributes_2[162269467] = {'value': university},
         if university_year:
             attributes_2[161921092] = {'value': university_year},
-        p_api_2.create_item({'fields':attributes_2})
+        new_item = p_api_2.create_item({'fields':attributes_2})
+        p_api_2.comment('item', new_item['item_id'], comment)
+
         print("%s has been added to the PODIO application for Value Delivery" % app['person']['email'])
 
 def load_bangladesh_ogx_realized(apps, ex_api, *args, **kwargs):
     p_api = api.PodioApi(19600457) #With credentials for the VD application
-    modified_eps = {} #Here it saves the EPs that have already been searched and found in PODIO, so it is not done again
     for app in apps['items']:
         print("Updating realizations of %s in Value Delivery space" % app['person']['full_name'])
-        if  app['person']['email'] not in modified_eps:
-            search = p_api.search_in_application_v2(app_id=19600457, ref_type='item', query=app['id'])
-            if len(search['results']) == 1: #Found exactly one, as it should be
-                # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
-                # gets the item
-                item_id = search['results'][0]['id']
-                item = p_api.get_item(item_id, external_id=False)
-                # Finds the status of the exchange
-                stage = item['values'][157141798]['value']
-                stage_number = int(stage.split(' - ')[0])
-                print(stage)
-                if stage_number == 1:
-                    p_api.updateItem(item_id, {
-                        157141798:'2 - Realized',
-                        163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')}})
-                    print("EP has been realized, updated")
-                elif stage_number < 0:
-                    print("Inelegible EP was realiZed?")
-                    p_api.comment('item', item_id, {'value': "ALERT: An ep who was marked as break approval or break realization in PODIO has been realizeded in EXPA. This case should bechecked immediately @[%s](user:%s) @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id'], ogx_responsible['name'], ogx_responsible['user_id'])})
-                elif stage_number > 1: #Higher than an approval already
-                    p_api.comment('item', item_id, {'value': "NOTE: An ep who was in a sate higher than realized has been marked as just realized. CHeck this out, @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id']) })
-            elif len(search['results']) == 0: #Found 0, not ideal but not unexpected, gotta create it and generate a warning
-                attributes = { # This is for creating a new realization at the VD space
-                    157131079:app['person']['first_name'],
-                    157141792:app['person']['last_name'],
-                    157141793:unicode(app['id']),
-                    157141794:unicode(app['person']['id']),
-                    157141800:{'value':app['person']['email'], 'type': 'work'},
-                    157141801:app['person']['home_lc']['name'],
-                    157141802:app['opportunity']['title'], #Nombre del proyecto
-                    157141795:unicode(app['opportunity']['id']),
-                    157141803:app['opportunity']['programmes']['short_name'],
-                    157141804:app['opportunity']['office']['name'],
-                    157141805:app['opportunity']['office']['country'], #País origen
-                    157141796:{'start_utc':app['date_approved'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
-                    163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+        search = p_api.search_in_application_v2(app_id=19600457, ref_type='item', query=app['id'])
+        if len(search['results']) == 1: #Found exactly one, as it should be
+            # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
+            # gets the item
+            item_id = search['results'][0]['id']
+            item = p_api.get_item(item_id, external_id=False)
+            # Finds the status of the exchange
+            stage = item['values'][157141798]['value']
+            stage_number = int(stage.split(' - ')[0])
+            print(stage)
+            if stage_number == 1:
+                p_api.updateItem(item_id, {
                     157141798:'2 - Realized',
-                    }
-                new_item = p_api.create_item({'fields':attributes})
-                item_id = new_item['item_id']
-                p_api.comment('item', item_id, {'value': "This realization belongs to an EP who hasn't been loaded yet. It is probably from an approval that happened before the start of the quarter @[Camilo Forero](user:1707071)"})
-                print("No EP was found, created in the space")
-            else: #FOund more than one, why, which one is it, help, abort
-                print("######ERROR#####")
-                print('Error, more than one item found')
-                print("")
-                continue
-            modified_eps[app['person']['email']] = item_id
-        else: #We already know this EP's PODIO ID
-            print ("Found in previously loaded approvals, just add the comment")
-            item_id = modified_eps[app['person']['email']]
+                    163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')}})
+                print("EP has been realized, updated")
+            elif stage_number < 0:
+                print("Inelegible EP was realiZed?")
+#                p_api.comment('item', item_id, {'value': "ALERT: An ep who was marked as break approval or break realization in PODIO has been realizeded in EXPA. This case should bechecked immediately @[%s](user:%s) @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id'], ogx_responsible['name'], ogx_responsible['user_id'])})
+            elif stage_number > 1: #Higher than an approval already
+#                p_api.comment('item', item_id, {'value': "NOTE: An ep who was in a sate higher than realized has been marked as just realized. CHeck this out, @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id']) })
+                pass #TODO: fix
+        elif len(search['results']) == 0: #Found 0, not ideal but not unexpected, gotta create it and generate a warning
+            attributes = { # This is for creating a new realization at the VD space
+                157131079:app['person']['first_name'],
+                157141792:app['person']['last_name'],
+                157141793:unicode(app['id']),
+                157141794:unicode(app['person']['id']),
+                157141800:{'value':app['person']['email'], 'type': 'work'},
+                157141801:app['person']['home_lc']['name'],
+                157141802:app['opportunity']['title'], #Nombre del proyecto
+                157141795:unicode(app['opportunity']['id']),
+                157141803:app['opportunity']['programmes']['short_name'],
+                157141804:app['opportunity']['office']['name'],
+                157141805:app['opportunity']['office']['country'], #País origen
+                157141796:{'start_utc':app['date_approved'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                157141798:'2 - Realized',
+                }
+            new_item = p_api.create_item({'fields':attributes})
+            item_id = new_item['item_id']
+            p_api.comment('item', item_id, {'value': "This realization belongs to an EP who hasn't been loaded yet. It is probably from an approval that happened before the start of the quarter @[Camilo Forero](user:1707071)"})
+            print("No EP was found, created in the space")
+        else: #FOund more than one, why, which one is it, help, abort
+            print("######ERROR#####")
+            print('Error, more than one item found')
+            print("")
+            continue
 
         #p_api.updateItem(item_id, {159728809:{'start_date':(datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')}}) # No need to update realization date... yet. But maybe it will be needed in the future. Remember to put the right field_id when that time comes
         p_api.comment('item', item_id, {
@@ -445,51 +535,63 @@ def load_bangladesh_ogx_standards(apps, ex_api):
     """
     p_api = api.PodioApi(19600457) #With credentials for the VD application
     for app in apps['items']:
-        print("Updating standards of %s in Value Delivery space" % app['person']['full_name'])
-        search = p_api.search_in_application_v2(app_id=19600457, ref_type='item', query=app['id'])
-        if len(search['results']) == 1: #Found exactly one, as it should be
-            # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
-            # gets the item
-            item_id = search['results'][0]['id']
-            update_dict = {} 
-            update_count = 0
-            nps_count = 0
-            #Proceed to update the Standards
-            for standard in app['standards']:
-                standard_field = bangladesh_conf.STANDARDS_FIELDS[standard['position']] # Gets the PODIO field related to the standard that will be updated
-                if standard['option'] is None:
-                    continue
-                elif standard['option'] == "true":
-                    update_dict[standard_field] = "Yes"
-                elif standard['option'] == "false":
-                    update_dict[standard_field] = "No"
-                else:
-                    raise Exception("Code misfire")
-                update_count += 1
-            if(update_count == 16):
-                update_dict[163432513]  = "Yes - completely"
-            elif(update_count >= 14):
-                update_dict[163432513]  = "Yes - partially"
-            if app['nps_grade'] is not None:
-                nps_count += 1
-                update_dict[163432514] = "Yes"
-                update_dict[166683670] = app['nps_grade']
-                print("NPS survey has been updated for this person")
-            if(update_count + nps_count > 0):
-                p_api.updateItem(item_id, update_dict)
-            comment_message = ("A total of %d Standards have been updated according to the EXPA Standards Survey." % update_count)
-            if nps_count > 0:
-                comment_message += " The NPS was also updated."
-            p_api.comment('item', item_id, {
-                'value': comment_message
-                    })
-            print("A total of %d Standards have been updated according to the EXPA Standards Survey" % update_count)
-            #item = p_api.get_item(item_id, external_id=False)
-        else: #FOund more than one, why, which one is it, help, abort
-            print("######ERROR#####")
-            print('Error, more than one item found')
-            print("")
-            continue
+        update_application_standards(app, p_api, ex_api)
+
+
+def update_application_standards(app, p_api, ex_api):
+    """ 
+    This synchronizes the Standards Survey in EXPA with the Standards Tracker in PODIO
+    """
+    print("Updating standards of %s in Value Delivery space" % app['person']['full_name'])
+    search = p_api.search_in_application_v2(app_id=19600457, ref_type='item', query=app['id'])
+    if len(search['results']) == 1: #Found exactly one, as it should be
+        # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
+        # gets the item
+        item_id = search['results'][0]['id']
+        update_dict = {} 
+        update_count = 0
+        nps_count = 0
+        lda_count = 0
+        #Proceed to update the Standards
+        for standard in app['standards']:
+            standard_field = bangladesh_conf.STANDARDS_FIELDS[standard['position']] # Gets the PODIO field related to the standard that will be updated
+            if standard['option'] is None:
+                continue # breaks the cycle, the update count won't go up
+            elif standard['option'] == "true" or standard['option'] == "not needed":
+                update_dict[standard_field] = "Yes"
+            elif standard['option'] == "false":
+                update_dict[standard_field] = "No"
+            else:
+                print(standard['option'])
+                raise Exception("Code misfire")
+            update_count += 1
+        if(update_count == 16):
+            update_dict[163432513]  = "Yes - completely"
+        elif(update_count >= 14):
+            update_dict[163432513]  = "Yes - partially"
+        if app['nps_grade'] is not None:
+            nps_count += 1
+            update_dict[163432514] = "Yes"
+            update_dict[166683670] = app['nps_grade']
+            print("NPS survey has been updated for this person")
+        if app['permissions']['has_filled_complete_ldm'] == 'true':
+            update_dict[163432515] = "Yes"
+        if(update_count + nps_count + lda_count > 0):
+            p_api.updateItem(item_id, update_dict)
+        comment_message = ("A total of %d Standards have been updated according to the EXPA Standards Survey." % update_count)
+        if nps_count > 0:
+            comment_message += " The NPS was also updated."
+        if lda_count > 0:
+            comment_message += " The LDA was also updated."
+        p_api.comment('item', item_id, {
+            'value': comment_message
+                })
+        print("A total of %d Standards have been updated according to the EXPA Standards Survey" % update_count)
+        #item = p_api.get_item(item_id, external_id=False)
+    else: #FOund more than one, why, which one is it, help, abort
+        print("######ERROR#####")
+        print('Error, more than one item found')
+        print("")
 
 
 days_to_load = 1
@@ -518,8 +620,8 @@ def _update_standards():
 
 
 load_list = [
-    (load_bangladesh_ogx_opens, {'interaction':'registered', 'days': days_to_load,
-        'officeID': 2010, 'today': False, 'program': 'ogx'}),
+#    (load_bangladesh_ogx_opens, {'interaction':'registered', 'days': days_to_load,
+#        'officeID': 2010, 'today': False, 'program': 'ogx'}),
     (load_bangladesh_ogx_apps, {'interaction':'applied', 'days': days_to_load,
         'officeID': 2010, 'today': False, 'program': 'ogx'}),
     (load_bangladesh_ogx_accepted, {'interaction':'accepted', 'days': days_to_load,
@@ -534,13 +636,13 @@ load_list = [
 def bangladesh_daily_load():
     print("loading in " + str(datetime.now()))
     bd_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net', fail_attempts=10)
+    load_bangladesh_ogx_opens_v2(bd_api.get_past_interactions(interaction='registered', days=days_to_load, officeID=2010, today=False, program='ogx'), ex_api=bd_api)
+    date = datetime.now().strftime('%Y-%m-%d')
     for function, kwargs in load_list:
         try:
             print("Attempting to load all {interaction} people of the {program} program from {days} days ago in office {officeID}".format(**kwargs))
-            function(bd_api.get_past_interactions(**kwargs), ex_api=bd_api)
+            function(bd_api.get_past_interactions(**kwargs), ex_api=bd_api, date=date)
             print("Success. Sleeping to allow PODIO search function to update itself")
-            from time import sleep
-            sleep(30)
         except (expaApi.APIUnavailableException) as e:
             print("Failure: EXPA is not working, the API is unavailable")
             print(e)
@@ -641,5 +743,261 @@ def update_country_applications():
         #TODO
 
             
-    
 
+def sync_bangladesh_ogx_approved(apps, ex_api, *args, **kwargs):
+    """
+    This method will check if a certain set of realizations exist or not in PODIO. If they do it will leave them alone. If they don't it will create a new one.
+    """
+    p_api = api.PodioApi(19600457) #With credentials for the VD application
+    modified_apps = {} #Here it saves the EPs that have already been searched and found in PODIO, so it is not done again
+    for app in apps['items']:
+        print("Updating approval of %s in Value Delivery space" % app['person']['full_name'])
+        breaker = False
+        if  app['person']['email'] not in modified_apps:
+            search = p_api.search_in_application_v2(app_id=19600457, ref_type='item', query=app['id'])
+            if len(search['results']) == 1: #Found exactly one, as it should be
+                # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
+                # gets the item
+                print("Success!")
+                print(app["status"])
+                print("")
+                continue #TODO: Everything after this should be cleaned up
+                item_id = search['results'][0]['id']
+                p_api.updateItem(item_id, {
+                    163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    168656289:{'start_utc':app['experience_end_date'].replace('T', ' ').replace('Z', '').replace('+00:00', '')}
+                    })
+                print(app['status'])
+                item = p_api.get_item(item_id, external_id=False)
+                # Finds the status of the exchange
+                stage = item['values'][157141798]['value']
+                stage_number = int(stage.split(' - ')[0])
+                print(stage)
+                if stage_number == 1:
+                    p_api.updateItem(item_id, {
+                        157141798:'2 - Realized',
+                        163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')}})
+                    print("EP has been realized, updated")
+                elif stage_number < 0:
+                    print("Inelegible EP was realiZed?")
+                    p_api.comment('item', item_id, {'value': "ALERT: An ep who was marked as break approval or break realization in PODIO has been realizeded in EXPA. This case should bechecked immediately @[%s](user:%s) @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id'], ogx_responsible['name'], ogx_responsible['user_id'])})
+                elif stage_number > 1: #Higher than an approval already
+                    p_api.comment('item', item_id, {'value': "NOTE: An ep who was in a sate higher than realized has been marked as just realized. CHeck this out, @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id']) })
+            elif len(search['results']) == 0: #Found 0, not ideal but not unexpected, gotta create it and generate a warning
+                print("Wow check this out")
+
+                attributes = { # This is for creating a new realization at the VD space
+                    157131079:app['person']['first_name'],
+                    157141792:app['person']['last_name'],
+                    157141793:unicode(app['id']),
+                    157141794:unicode(app['person']['id']),
+                    157141800:{'value':app['person']['email'], 'type': 'work'},
+                    157141801:app['person']['home_lc']['name'],
+                    157141802:app['opportunity']['title'], #Nombre del proyecto
+                    157141795:unicode(app['opportunity']['id']),
+                    157141803:app['opportunity']['programmes']['short_name'],
+                    157141804:app['opportunity']['office']['name'],
+                    157141805:app['opportunity']['office']['country'], #País origen
+                    157141796:{'start_utc':app['date_approved'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    157141798:'-5 - Break Approval',
+                    }
+                new_item = p_api.create_item({'fields':attributes})
+                if breaker:
+                    print(app)
+                    break
+                else:
+                    breaker = True
+                item_id = new_item['item_id']
+                p_api.comment('item', item_id, {'value': "This realization belongs to an EP who hasn't been loaded yet. It is probably from an approval that happened before the start of the quarter @[Camilo Forero](user:1707071)"})
+                print("No EP was found, created in the space")
+            else: #FOund more than one, why, which one is it, help, abort
+                print("######ERROR#####")
+                print('Error, more than one item found')
+                print("")
+                break
+            modified_apps[app['id']] = item_id
+        else: #We already know this EP's PODIO ID
+            print ("Found in previously loaded approvals, just add the comment")
+            continue
+            item_id = modified_apps[app['id']]
+
+def sync_bangladesh_ogx_realized(apps, ex_api, *args, **kwargs):
+    """
+    This method will check if a certain set of realizations exist or not in PODIO. If they do it will leave them alone. If they don't it will create a new one.
+    """
+    p_api = api.PodioApi(19600457) #With credentials for the VD application
+    modified_apps = {} #Here it saves the EPs that have already been searched and found in PODIO, so it is not done again
+    for app in apps['items']:
+        print("Updating realizations of %s in Value Delivery space" % app['person']['full_name'])
+        if  app['person']['email'] not in modified_apps:
+            search = p_api.search_in_application_v2(app_id=19600457, ref_type='item', query=app['id'])
+            if len(search['results']) == 1: #Found exactly one, as it should be
+                # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
+                # gets the item
+                item_id = search['results'][0]['id']
+                p_api.updateItem(item_id, {
+                    163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    168656289:{'start_utc':app['experience_end_date'].replace('T', ' ').replace('Z', '').replace('+00:00', '')}
+                    })
+                continue #TODO: Everything after this should be cleaned up
+                print(app['status'])
+                item = p_api.get_item(item_id, external_id=False)
+                # Finds the status of the exchange
+                stage = item['values'][157141798]['value']
+                stage_number = int(stage.split(' - ')[0])
+                breaker = False
+                print(stage)
+                if stage_number == 1:
+                    p_api.updateItem(item_id, {
+                        157141798:'2 - Realized',
+                        163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                        168656289:{'start_utc':app['experience_end_date'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    })
+                    print("EP has been realized, updated")
+                elif stage_number < 0:
+                    print("Inelegible EP was realiZed?")
+                    p_api.comment('item', item_id, {'value': "ALERT: An ep who was marked as break approval or break realization in PODIO has been realizeded in EXPA. This case should bechecked immediately @[%s](user:%s) @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id'], ogx_responsible['name'], ogx_responsible['user_id'])})
+                elif stage_number > 1: #Higher than an approval already
+                    p_api.comment('item', item_id, {'value': "NOTE: An ep who was in a sate higher than realized has been marked as just realized. CHeck this out, @[%s](user:%s)" % (di_responsible['name'],di_responsible['user_id']) })
+            elif len(search['results']) == 0: #Found 0, not ideal but not unexpected, gotta create it and generate a warning
+                print("Wow check this out")
+
+                attributes = { # This is for creating a new realization at the VD space
+                    157131079:app['person']['first_name'],
+                    157141792:app['person']['last_name'],
+                    157141793:unicode(app['id']),
+                    157141794:unicode(app['person']['id']),
+                    157141800:{'value':app['person']['email'], 'type': 'work'},
+                    157141801:app['person']['home_lc']['name'],
+                    157141802:app['opportunity']['title'], #Nombre del proyecto
+                    157141795:unicode(app['opportunity']['id']),
+                    157141803:app['opportunity']['programmes']['short_name'],
+                    157141804:app['opportunity']['office']['name'],
+                    157141805:app['opportunity']['office']['country'], #País origen
+                    157141796:{'start_utc':app['date_approved'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    }
+                new_item = p_api.create_item({'fields':attributes})
+                if breaker:
+                    print(app)
+                    break
+                else:
+                    breaker = True
+                item_id = new_item['item_id']
+                print("No EP was found, created in the space")
+            else: #FOund more than one, why, which one is it, help, abort
+                print("######ERROR#####")
+                print('Error, more than one item found')
+                print("")
+                break
+            modified_apps[app['id']] = item_id
+        else: #We already know this EP's PODIO ID
+            print ("Found in previously loaded approvals, just add the comment")
+            continue
+            item_id = modified_apps[app['id']]
+
+
+def sync_bangladesh_ogx_finished(apps, ex_api, *args, **kwargs):
+    """
+    This method will check if a certain set of realizations exist or not in PODIO. If they do it will leave them alone. If they don't it will create a new one.
+    """
+    p_api = api.PodioApi(19600457) #With credentials for the VD application
+    modified_apps = {} #Here it saves the EPs that have already been searched and found in PODIO, so it is not done again
+    for app in apps['items']:
+        print("Updating finished of %s in Value Delivery space" % app['person']['full_name'])
+        breaker = False
+        if  app['id'] not in modified_apps:
+            search = p_api.search_in_application_v2(app_id=19600457, ref_type='item', query=app['id'])
+            if len(search['results']) == 1: #Found exactly one, as it should be
+                # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
+                # gets the item
+                print("Success! updating standards...")
+                update_application_standards(app, p_api, ex_api)
+                print(app["status"])
+                print("")
+                continue #TODO: Everything after this should be cleaned up
+                item_id = search['results'][0]['id']
+                p_api.updateItem(item_id, {
+                    163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    168656289:{'start_utc':app['experience_end_date'].replace('T', ' ').replace('Z', '').replace('+00:00', '')}
+                    })
+                print(app['status'])
+                item = p_api.get_item(item_id, external_id=False)
+                # Finds the status of the exchange
+                stage = item['values'][157141798]['value']
+                stage_number = int(stage.split(' - ')[0])
+                print(stage)
+            elif len(search['results']) == 0: #Found 0, not ideal but not unexpected, gotta create it and generate a warning
+                print("Wow check this out")
+
+                attributes = { # This is for creating a new realization at the VD space
+                    157131079:app['person']['first_name'],
+                    157141792:app['person']['last_name'],
+                    157141793:unicode(app['id']),
+                    157141794:unicode(app['person']['id']),
+                    157141800:{'value':app['person']['email'], 'type': 'work'},
+                    157141801:app['person']['home_lc']['name'],
+                    157141802:app['opportunity']['title'], #Nombre del proyecto
+                    157141795:unicode(app['opportunity']['id']),
+                    157141803:app['opportunity']['programmes']['short_name'],
+                    157141804:app['opportunity']['office']['name'],
+                    157141805:app['opportunity']['office']['country'], #País origen
+                    157141796:{'start_utc':app['date_approved'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    163451022:{'start_utc':app['date_realized'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    168656289:{'start_utc':app['experience_end_date'].replace('T', ' ').replace('Z', '').replace('+00:00', '')},
+                    157141798:'3 - Finished',
+                    }
+                new_item = p_api.create_item({'fields':attributes})
+                update_application_standards(app, p_api, ex_api)
+                if breaker:
+                    print(app)
+                    break
+                else:
+                    breaker = True
+                item_id = new_item['item_id']
+                print("No EP was found, created in the space")
+            else: #FOund more than one, why, which one is it, help, abort
+                print("######ERROR#####")
+                print('Error, more than one item found')
+                print("")
+                break
+            modified_apps[app['id']] = item_id
+        else: #We already know this EP's PODIO ID
+            print ("Found in previously loaded approvals, just add the comment")
+            continue
+            item_id = modified_apps[app['id']]
+
+
+
+def super_sync_ogx_realized(start_date):
+    kwargs = {'interaction':'realized', 'start_date': start_date,
+        'officeID': 2010, 'program': 'ogx'}
+    bd_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net', fail_attempts=10)
+    sync_bangladesh_ogx_realized(bd_api.get_interactions(**kwargs), ex_api=bd_api)
+
+def super_sync_ogx_approved(start_date):
+    kwargs = {'interaction':'approved', 'start_date': start_date,
+        'officeID': 2010, 'program': 'ogx'}
+    bd_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net', fail_attempts=10)
+    sync_bangladesh_ogx_approved(bd_api.get_interactions(**kwargs), ex_api=bd_api)
+
+
+def super_sync_ogx_finished(start_date):
+    kwargs = {'interaction':'finished', 'start_date': start_date,
+        'officeID': 2010, 'program': 'ogx'}
+    bd_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net', fail_attempts=10)
+    sync_bangladesh_ogx_finished(bd_api.get_interactions(**kwargs), ex_api=bd_api)
+
+
+def fix_skipped_day(date):
+    kwargs = {'interaction':'registered', 'start_date': date,
+        'officeID': 2010, 'program': 'ogx', 'end_date': date}
+    bd_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net', fail_attempts=10)
+#    kwargs['interaction'] = 'applied'
+#    load_bangladesh_ogx_applied(bd_api.get_interactions(**kwargs), ex_api=bd_api)
+#    kwargs['interaction'] = 'accepted'
+#    load_bangladesh_ogx_accepted(bd_api.get_interactions(**kwargs), ex_api=bd_api)
+#    kwargs['interaction'] = 'approved'
+#    load_bangladesh_ogx_approved(bd_api.get_interactions(**kwargs), ex_api=bd_api)
+    kwargs['interaction'] = 'realized'
+    load_bangladesh_ogx_realized(bd_api.get_interactions(**kwargs), ex_api=bd_api)

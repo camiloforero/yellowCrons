@@ -27,7 +27,10 @@ def _filter_comment(api, filters, message, tag_type, tag_value):
         print(item['values'][151795764]['value'])
         print(item['values'][151795769]['value'])
         if tag_type == 'podio_field':
-            l_message +=  tools.tags_from_podio_contacts([item['values'][tag_value]])
+            try:
+                l_message +=  tools.tags_from_podio_contacts([item['values'][tag_value]])
+            except KeyError:
+                pass
         elif tag_type == 'queryset':
             l_message += tools.tags_from_queryset(models.Role.objects.filter(role=tag_value))
         print(l_message)
@@ -41,7 +44,7 @@ def time_based_update(cons_api, vd_api):
     """
     #Notify the TL if uncontacted after three days
     filters={
-        151950042:{"from": "-4d", "to": "-4d",},
+        151950042:{"from": "-3d", "to": "-3d",},
         151795769:[1],
         }
     message = "This person has not been contacted after three days. Please check what is going on. "
@@ -49,17 +52,17 @@ def time_based_update(cons_api, vd_api):
 
 
     #Notify the LCVP if uncontacted after 5 days
-    filters={
-        151950042:{"from": "-6d", "to": "-6d",},
-        151795769:[1],
-        }
-    message = "This person has not been contacted after five days. Please check what is going on. "
-    _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=165527150)
+#    filters={
+#        151950042:{"from": "-6d", "to": "-6d",},
+#        151795769:[1],
+#        }
+#    message = "This person has not been contacted after five days. Please check what is going on. "
+#    _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=165527150)
 
 
     #Notify the oGV responsible of uncontacted after 7 days
     filters={
-        151950042:{"from": "-8d", "to": "-8d",},
+        151950042:{"from": "-7d", "to": "-7d",},
         151795769:[1],
         }
     message = "This person has not been contacted after seven days. Please check what is going on. "
@@ -67,7 +70,7 @@ def time_based_update(cons_api, vd_api):
 
     #FOr EPs applied and accepted but uncontacted, Notify the TL next day to tell them to follow up ASAP
     filters = {
-        151950042:{"from": "-2d", "to": "-2d",},
+        151950042:{"from": "-1d", "to": "-1d",},
         151795769:[16, 17, 18],
         }
     message = "This person has already applied, but hasn't been contacted yet. Please check what is going on. "
@@ -75,12 +78,12 @@ def time_based_update(cons_api, vd_api):
 
 
     #Notify the LCVP after two days if still uncontacted
-    filters = {
-        151950042:{"from": "-3d", "to": "-3d",},
-        151795769:[16, 17, 18],
-        }
-    message = "This person has already applied, but hasn't been contacted yet. Please check what is going on. "
-    _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=165527150)
+#    filters = {
+#        151950042:{"from": "-3d", "to": "-3d",},
+#        151795769:[16, 17, 18],
+#        }
+#    message = "This person has already applied, but hasn't been contacted yet. Please check what is going on. "
+#    _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=165527150)
 
 
     #Notify Louise if still uncontacted
@@ -92,9 +95,9 @@ def time_based_update(cons_api, vd_api):
     _filter_comment(cons_api, filters, message, tag_type='queryset', tag_value='mcvp_ogv')
 
 
-    #Notify the TM after two days waiting for answer to follow up
+    #Notify the TM after three days waiting for answer to follow up
     filters = {
-        159724899:{"from": "-4d", "to": "-4d",},
+        159724899:{"from": "-3d", "to": "-3d",},
         151795769:[15],
         }
 
@@ -104,10 +107,10 @@ def time_based_update(cons_api, vd_api):
 
     #Notify the TL after five days to follow up
     filters = {
-        159724899:{"from": "-8d", "to": "-8d",},
+        159724899:{"from": "-5d", "to": "-5d",},
         151795769:[15],
         }
-    message = "This person hasn't been followed up for a week. Please review "
+    message = "This person hasn't been followed up for five days. Please review "
     _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=151795765)
 
     #Notify the LCVP oGV if the EP has been 15 days without being contacted
@@ -115,7 +118,7 @@ def time_based_update(cons_api, vd_api):
         159724899:{"from": "-15d", "to": "-15d",},
         151795769:[15],
         }
-    message = "This person hasn't been followed up for two weeks. "
+    message = "This person hasn't been followed up for a week. "
     _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=165527150)
 
     #Notify TM after two days of being a warm lead if they have not applied yet
@@ -132,7 +135,7 @@ def time_based_update(cons_api, vd_api):
         158519539:{"from": "-3d", "to": "-3d",},
         151795769:[5],
         }
-    message = "This person has applied to several opportunities now. Remember to follow up with them and with their opportunity managers to continue with the process "
+    message = "This person has last applied three days ago without being accepted.. Remember to follow up with them and with their opportunity managers to continue with the process "
     _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=151795767)
 
 def vd_scripts(vd_api):

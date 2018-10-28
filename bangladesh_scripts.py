@@ -228,7 +228,7 @@ def load_bangladesh_ogx_accepted(apps, ex_api, date, *args, **kwargs):
     p_api = api.PodioApi(19156174)
     modified_eps = {}
     for app in apps['items']:
-        print("Loading acceptance of %s" % app['person']['full_name']i, end=' - ')
+        print("Loading acceptance of %s" % app['person']['full_name'], end=' - ')
         if  app['person']['email'] not in modified_eps:
             search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=app['person']['id'])
             if len(search['results']) == 1: #Found exactly one, as it should be

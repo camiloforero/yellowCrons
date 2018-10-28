@@ -10,6 +10,72 @@ def parse_date(old_date):
     datetime.strptime('%Y-%m-%d')
 
 
+def find_or_create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs):
+    # search is this person is already under PODIO
+    search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=open_expa_id)
+    if len(search['results']) >= 1: #Found exactly one, as it should be
+        print("%d result was already found, skipping" % len(search['results']))
+        continue
+    else:
+        create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs)
+
+def create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs):
+    person = kwargs['ex_api'].getPerson(unicode(open_expa_id))
+    alignment = kwargs['ex_api'].get_lc_alignment(unicode(open_expa_id))
+    print("EXPA success, starting PODIO load")
+    try:
+        referral_type = person['referral_type']
+        if referral_type is None or referral_type == "":
+            referral_type = "Other"
+        if person['profile_completeness']['gv']:
+            profile_complete = "Yes"
+        else:
+            profile_complete = "No"
+        attributes = {
+            151791638: {'value': person['first_name']},
+            151795763: {'value': person['last_name']},
+            151795764: {'value': unicode(person['id'])},
+            151950042: {'start_utc': person['created_at'].replace('T', ' ').replace('Z', '')},
+            151795766: {'type': 'work', 'value': person['email']},
+            151795772: {'value': person['home_lc']['name']},
+            151795769: {'value': '0 - Uncontacted'},
+            151818116: {'value': referral_type},
+            159966006: profile_complete,
+            151832581: alignment,
+            }
+        if(person['dob']):
+            attributes[154339943] = {'start_date': person['dob']}
+        try:
+            manager = managers.get(expa_id=person['managers'][0]['id'])
+            attributes[151795765] = {'value':{'id': manager.podio_id, 'type':'user'}},
+        except Exception as e:
+            print(e)
+            pass
+        if(person['contact_info']):
+            attributes[151795768] = {'type': 'mobile', 'value': '%s%s' % (person['contact_info']['country_code'], person['contact_info']['phone'])},
+    except Exception as e:
+        print("Argument load unsuccessful, check item for errors")
+        print(e)
+        print(person)
+        raise e
+    try:
+        p_api.create_item({'fields':attributes})
+        print("%s has been added al espacio de OGX de opens" % person['email'])
+        print("")
+    except Exception as e:
+        print(e)
+        print("Error adding %s (expa_id %s) to the Bangladesh opens space" % (person['full_name'], person['id']))
+        continue
+
+def update_open_in_podio():
+    pass
+
+def create_approval_in_podio():
+    pass
+
+def update_approval_in_podio():
+    pass
+
 def multidaily_open_load():
     date = datetime.now().strftime('%Y-%m-%d')
     kwargs = {'interaction':'registered', 'start_date': date,
@@ -24,158 +90,10 @@ def load_bangladesh_ogx_opens_v2(people, *args, **kwargs):
     This one method also searches for duplicates in PODIO before loading them.
     """
     p_api = api.PodioApi(19156174)
-#    active_managers = models.Member.objects.filter(is_active=True).order_by('?')
     managers = models.Member.objects.filter()
 
-    manager_index = 0 #The current VP who will be assigned to the next EP 
-
-    for raw_person in people['items']:
-        # search is this person is already under PODIO
-        search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=raw_person['id'])
-        if len(search['results']) >= 1: #Found exactly one, as it should be
-            print("%d result was already found, skipping" % len(search['results']))
-            continue 
-        else:
-#            current_manager = None
-#            if len(raw_person['managers']) > 0:
-#                for manager in raw_person['managers']:
-#                    mn_id = unicode(manager['id'])
-#                    try:
-#                        current_manager = active_managers.get(expa_id=mn_id)
-#                        print("There was already at least one EP manager, %s will be assigned" % manager['full_name'])
-#                        break
-#                    except models.Member.DoesNotExist:
-#                        continue
-#            if current_manager is None:
-#                current_manager = active_managers[manager_index]
-#                manager_index = (manager_index + 1) % len(active_managers)
-#            print("Updating %s (expa_id %s) with EP manager %s" % (raw_person['full_name'], raw_person['id'], current_manager.name)) 
-#            person = kwargs['ex_api'].update_person(unicode(raw_person['id']), {"manager_ids": [current_manager.expa_id]})
-            person = kwargs['ex_api'].getPerson(unicode(raw_person['id']))
-            alignment = kwargs['ex_api'].get_lc_alignment(unicode(raw_person['id']))
-            print("EXPA success, starting PODIO load")
-            try:
-                referral_type = person['referral_type']
-                if referral_type is None or referral_type == "":
-                    referral_type = "Other"
-                if person['profile_completeness']['gv']:
-                    profile_complete = "Yes"
-                else:
-                    profile_complete = "No"
-                attributes = {
-                    151791638: {'value': person['first_name']},
-                    151795763: {'value': person['last_name']},
-                    151795764: {'value': unicode(person['id'])},
-#                    151795765: {'value':{'id': current_manager.podio_id, 'type':'user'}},
-                    151950042: {'start_utc': person['created_at'].replace('T', ' ').replace('Z', '')},
-                    151795766: {'type': 'work', 'value': person['email']},
-                    151795772: {'value': person['home_lc']['name']},
-                    151795769: {'value': '0 - Uncontacted'},
-                    151818116: {'value': referral_type},
-                    159966006: profile_complete,
-                    151832581: alignment,
-                    }
-                if(person['dob']):
-                    attributes[154339943] = {'start_date': person['dob']}
-                try:
-                    manager = managers.get(expa_id=person['managers'][0]['id'])
-                    attributes[151795765] = {'value':{'id': manager.podio_id, 'type':'user'}},
-                except Exception as e:
-                    print(e)
-                    pass
-                if(person['contact_info']):
-                    attributes[151795768] = {'type': 'mobile', 'value': '%s%s' % (person['contact_info']['country_code'], person['contact_info']['phone'])},
-            except Exception as e:
-                print("Argument load unsuccessful, check item for errors")
-                print(e)
-                print(person)
-                raise e
-            try:
-                p_api.create_item({'fields':attributes})
-                print("%s has been added al espacio de OGX de opens" % person['email'])
-                print("")
-            except Exception as e:
-                print(e)
-                print("Error adding %s (expa_id %s) to the Bangladesh opens space" % (person['full_name'], person['id']))
-                continue
-
-
-def load_bangladesh_ogx_opens(people, *args, **kwargs):
-    """
-    This method loads all new oGX opens into the PODIO workspace. It works a bit differently than the usual; it also autoassigns EP managers to each EP it loads through EXPA before saving them in PODIO. This requires taking an extra step
-    """
-    p_api = api.PodioApi(19156174)
-    active_lcvps = models.Member.objects.filter(is_lcvp=True, is_active=True).order_by('?')
-    manager_index = 0 #The current VP who will be assigned to the next EP 
-    tl_index = {} # Here we will initialize, for each VP, the index of the TL who will be assigned next
-    for manager in active_lcvps:
-        print(manager)
-        tl_index[manager.expa_id] = random.randint(0, len(manager.team_members.filter(is_active=True)) - 1)
-        print("TL index for %s" % manager.name)
-        print(tl_index[manager.expa_id])
-    for raw_person in people['items']:
-        current_manager = None
-        current_tl = None
-        if len(raw_person['managers']) > 0:
-            for manager in raw_person['managers']:
-                mn_id = unicode(manager['id'])
-                try:
-                    current_manager = active_lcvps.get(expa_id=mn_id)
-                    print("There was already at least one EP manager, %s will be assigned" % manager['full_name'])
-                    break
-                except models.Member.DoesNotExist:
-                    continue
-        if current_manager is None:
-            current_manager = active_lcvps[manager_index]
-            manager_index = (manager_index + 1) % len(active_lcvps)
-        if current_tl is None:
-            tl_list = current_manager.team_members.filter(is_active=True)
-            current_tl = tl_list[tl_index[current_manager.expa_id]]
-            print(tl_index)
-            tl_index[current_manager.expa_id] = (tl_index[current_manager.expa_id] + 1) % len(tl_list) 
-            print(tl_index)
-        print("Updating %s (expa_id %s) with LCVP %s and TL %s" % (raw_person['full_name'], raw_person['id'], current_manager.name, current_tl.name)) 
-        person = kwargs['ex_api'].update_person(unicode(raw_person['id']), {"manager_ids": [current_manager.expa_id, current_tl.expa_id]})
-        print("EXPA success, starting PODIO load")
-        try:
-            referral_type = person['referral_type']
-            if referral_type is None or referral_type == "":
-                referral_type = "Other"
-            if person['profile_completeness']['gv']:
-                profile_complete = "Yes"
-            else:
-                profile_complete = "No"
-            attributes = {
-                151791638: {'value': person['first_name']},
-                151795763: {'value': person['last_name']},
-                151795764: {'value': unicode(person['id'])},
-                165527150: {'value':{'id': current_manager.podio_id, 'type':'user'}},
-                151795765: {'value':{'id': current_tl.podio_id, 'type':'user'}},
-                151950042: {'start_utc': person['created_at'].replace('T', ' ').replace('Z', '')},
-                151795766: {'type': 'work', 'value': person['email']},
-                151795772: {'value': person['home_lc']['name']},
-                151795769: {'value': '0 - Uncontacted'},
-                151818116: {'value': referral_type},
-                159966006: profile_complete,
-                }
-            if(person['dob']):
-                attributes[154339943] = {'start_date': person['dob']}
-            if(person['contact_info']):
-                attributes[151795768] = {'type': 'mobile', 'value': '%s%s' % (person['contact_info']['country_code'], person['contact_info']['phone'])},
-            if(len(person['academic_experiences']) > 0):
-                attributes[151832581] = person['academic_experiences'][0]['organisation_name'] 
-        except Exception as e:
-            print("Argument load unsuccessful, check item for errors")
-            print(e)
-            print(person)
-            raise e
-        try:
-            p_api.create_item({'fields':attributes})
-            print("Se ha agregado a %s al espacio de OGX de opens" % person['email'])
-        except Exception as e:
-            print(e)
-            print("Error adding %s (expa_id %s) to the Bangladesh opens space" % (person['full_name'], person['id']))
-            continue
+    for open in people['items']:
+        find_or_create_open_in_podio(p_api, open['id'], managers, *args, **kwargs)
 
 
 def load_bangladesh_ogx_apps(apps, *args, **kwargs):
@@ -612,7 +530,7 @@ def load_bangladesh_ogx_finished(apps, ex_api, *args, **kwargs):
                 })
 
 def load_bangladesh_ogx_standards(apps, ex_api):
-    """ 
+    """
     This synchronizes the Standards Survey in EXPA with the Standards Tracker in PODIO
     """
     p_api = api.PodioApi(19600457) #With credentials for the VD application
@@ -621,7 +539,7 @@ def load_bangladesh_ogx_standards(apps, ex_api):
 
 
 def update_application_standards(app, p_api, ex_api):
-    """ 
+    """
     This synchronizes the Standards Survey in EXPA with the Standards Tracker in PODIO
     """
     print("Updating standards of %s in Value Delivery space" % app['person']['full_name'])
@@ -630,7 +548,7 @@ def update_application_standards(app, p_api, ex_api):
         # Initializes variables that may or may not be in the consideration space, to be transferred later to the VD space if they exist
         # gets the item
         item_id = search['results'][0]['id']
-        update_dict = {} 
+        update_dict = {}
         update_count = 0
         nps_count = 0
         lda_count = 0
@@ -782,7 +700,7 @@ def email_quizz_sender(podio_app_id, week):
             context['week'] = week
         to_email = [context['Email']]
         email.send_mail(from_email, to_email, context)
-            
+
 def lda_score_updater():
     p_api = api.PodioApi(19600457)
     bd_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
@@ -814,7 +732,7 @@ def lda_score_updater():
                                         score += int(measurement['score'])
                                     element_total = subresult['sub_quality'] + ': Total score: ' + str(score) + ". Description: " + description2 + "<br/>"
                                     description += element_total
-                                        
+
                                 print(description)
                                 params[podio_dict[key]['subqualities']] = description
                         print(params)
@@ -824,7 +742,7 @@ def lda_score_updater():
             else:
                 print(result['opportunity_application_id'])
                 print(item['values'][157141793]['value'])
-            
+
 def update_country_applications():
     p_api = api.PodioApi(19156174)
     bd_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
@@ -853,7 +771,7 @@ def update_country_applications():
         #Update the found podio item with the number of country partner applications
         #TODO
 
-            
+
 
 def sync_bangladesh_ogx_approved(apps, ex_api, *args, **kwargs):
     """

@@ -30,6 +30,7 @@ def _filter_comment(api, filters, message, tag_type, tag_value):
             try:
                 l_message +=  tools.tags_from_podio_contacts([item['values'][tag_value]])
             except KeyError:
+                print("Error: Tag type: %s. Tag value: %s" % (tag_type, tag_value))
                 pass
         elif tag_type == 'queryset':
             l_message += tools.tags_from_queryset(models.Role.objects.filter(role=tag_value))
@@ -119,7 +120,7 @@ def time_based_update(cons_api, vd_api):
         151795769:[15],
         }
     message = "This person hasn't been followed up for a week. "
-    _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=165527150)
+    _filter_comment(cons_api, filters, message, tag_type ='queryset', tag_value='mcvp_ogv')
 
     #Notify TM after two days of being a warm lead if they have not applied yet
     filters = {
@@ -135,7 +136,7 @@ def time_based_update(cons_api, vd_api):
         158519539:{"from": "-3d", "to": "-3d",},
         151795769:[5],
         }
-    message = "This person has last applied three days ago without being accepted.. Remember to follow up with them and with their opportunity managers to continue with the process "
+    message = "This person has last applied three days ago without being accepted. Remember to follow up with them and with their opportunity managers to continue with the process "
     _filter_comment(cons_api, filters, message, tag_type ='podio_field', tag_value=151795767)
 
 def vd_scripts(vd_api):

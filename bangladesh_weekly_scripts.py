@@ -49,7 +49,7 @@ def send_performance_email():
     #print(performance)
 
 def send_partners_email(): 
-    ex_api = expaApi.ExpaApi(account='camilo.forero@aiesec.net')
+    ex_api = expaApi.ExpaApi(account='louise.kim@aiesec.net')
     email = mailApi.MailApi("partners_analytics_mail")
     country_partners = [
         {'id':1609, 'name': 'Egypt'},
@@ -63,8 +63,10 @@ def send_partners_email():
     ]
     results = {}
     for partner in country_partners:
-        results[partner['name']] = ex_api.e2e_analytics(2010, partner['id'], 'ogv', '2018-04-01')
-    email.send_mail('camilo.forero@aiesec.net', ['louise.kim@aiesec.net', 'camilo.forero@aiesec.net'], {'results': results})
+        #results[partner['name']] = ex_api.e3e_analytics(2010, partner['id'], 'ogv', '2018-04-01')
+        #results[partner['name']] = ex_api.e2e_analytics(2010, partner['id'], 'ogv', '2017-08-01')
+        results[partner['name']] = ex_api.e2e_analytics(2010, partner['id'], 'ogv', '2016-08-01', '2017-07-31')
+    email.send_mail('camilo.forero@aiesec.net', ['camilo.forero@aiesec.net'], {'results': results})
 
 def run():
     send_partners_email()

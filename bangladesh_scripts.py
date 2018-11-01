@@ -68,7 +68,6 @@ def create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs):
     except Exception as e:
         print(e)
         print("Error adding %s (expa_id %s) to the Bangladesh opens space" % (person['full_name'], person['id']))
-        continue
 
 def update_open_in_podio():
     pass

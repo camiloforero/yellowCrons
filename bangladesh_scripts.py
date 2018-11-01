@@ -1027,7 +1027,7 @@ def update_lc_alignments(start_date):
     p_api = api.PodioApi(19156174)
     newly_registered = bd_api.get_interactions(**kwargs)
     for registered in newly_registered:
-        open_expa_id = registered['id']
+        open_expa_id = unicode(registered['id'])
         search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=open_expa_id)
         if len(search['results']) > 1: #Found exactly one, as it should be
             print("%d results found for expa-id %d" % (len(search['results']), open_expa_id))
@@ -1039,6 +1039,7 @@ def update_lc_alignments(start_date):
             print(alignment)
             item_id = search['results'][0]['id']
             print(item_id)
+            151832580
             #item = p_api.get_item(item_id, external_id=False)
 
 

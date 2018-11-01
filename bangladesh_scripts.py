@@ -1030,16 +1030,21 @@ def update_lc_alignments(start_date):
         open_expa_id = unicode(registered['id'])
         search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=open_expa_id)
         if len(search['results']) > 1: #Found exactly one, as it should be
-            print("%d results found for expa-id %d" % (len(search['results']), open_expa_id))
+            print("%d results found for expa-id %s" % (len(search['results']), open_expa_id))
         elif len(search['results']) == 0:
-            print("Whaaa %d results found for expa-id %d" % (len(search['results']), open_expa_id))
+            print("Whaaa %d results found for expa-id %s" % (len(search['results']), open_expa_id))
             # create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs)
         else:
             alignment = bd_api.get_lc_alignment(unicode(registered['id']))
             print(alignment)
             item_id = search['results'][0]['id']
             print(item_id)
-            151832580
+            update_params = {
+                151832580: alignment
+            }
+            # p_api.updateItem(item_id, update_params)
+
+            #151832580
             #item = p_api.get_item(item_id, external_id=False)
 
 

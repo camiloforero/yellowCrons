@@ -6,6 +6,10 @@ from django_podio import api
 from django_expa import expaApi
 from django_mailTemplates import mailApi
 from . import bangladesh_conf, models, tools
+
+days_to_load = 5
+
+
 def parse_date(old_date):
     datetime.strptime('%Y-%m-%d')
 
@@ -15,7 +19,6 @@ def find_or_create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs)
     search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=open_expa_id)
     if len(search['results']) >= 1: #Found exactly one, as it should be
         print("%d result was already found, skipping" % len(search['results']))
-        continue
     else:
         create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs)
 
@@ -602,7 +605,6 @@ def update_application_standards(app, p_api, ex_api):
         print("")
 
 
-days_to_load = 1
 def _update_standards():
     ex_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
     print("Updating EPs currently approved")

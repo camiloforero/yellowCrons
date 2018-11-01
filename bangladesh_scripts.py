@@ -1019,14 +1019,13 @@ def super_sync_ogx_finished(start_date):
     bd_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
     sync_bangladesh_ogx_finished(bd_api.get_interactions(**kwargs), ex_api=bd_api)
 
-def update_lc_alignments(start_date):
+def update_lc_alignments(start_date, end_date):
     kwargs = {'interaction':'registered', 'start_date': start_date,
-        'officeID': 2010, 'program': 'ogx'}
+        'officeID': 2010, 'program': 'ogx', 'end_date': end_date}
     bd_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
     p_api = api.PodioApi(19156174)
     newly_registered = bd_api.get_interactions(**kwargs)
     for registered in newly_registered['items']:
-        print(registered)
         open_expa_id = unicode(registered['id'])
         search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=open_expa_id)
         if len(search['results']) > 1: #Found exactly one, as it should be

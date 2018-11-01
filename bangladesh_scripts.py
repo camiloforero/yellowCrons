@@ -1019,13 +1019,13 @@ def super_sync_ogx_finished(start_date):
     bd_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
     sync_bangladesh_ogx_finished(bd_api.get_interactions(**kwargs), ex_api=bd_api)
 
-def update_lc_alignments(start_date, end_date):
+def update_lc_alignments(page, per_page):
     kwargs = {'interaction':'registered', 'start_date': start_date,
         'officeID': 2010, 'program': 'ogx', 'end_date': end_date}
     bd_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
     p_api = api.PodioApi(19156174)
-    newly_registered = bd_api.get_interactions(**kwargs)
-    for registered in newly_registered['items']:
+    newly_registered = bd_api.get_recent_registered_with_alignment(page, per_page)
+    for registered in newly_registered:
         open_expa_id = unicode(registered['id'])
         search = p_api.search_in_application_v2(app_id=19156174, ref_type='item', query=open_expa_id)
         if len(search['results']) > 1: #Found exactly one, as it should be
@@ -1034,10 +1034,14 @@ def update_lc_alignments(start_date, end_date):
             print("Whaaa %d results found for expa-id %s" % (len(search['results']), open_expa_id))
             # create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs)
         else:
-            alignment = bd_api.get_lc_alignment(unicode(registered['id']))
-            print(alignment)
+            alignment_object = registered['lc_alignment']
+            if alignment_object is None:
+                alignment = 'Unknown'
+            else
+                alignment = alignment_object['keywords']
             item_id = search['results'][0]['id']
             print(item_id)
+            print(alignment)
             update_params = {
                 151832580: alignment
             }

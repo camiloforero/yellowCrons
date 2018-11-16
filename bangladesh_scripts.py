@@ -7,7 +7,7 @@ from django_expa import expaApi
 from django_mailTemplates import mailApi
 from . import bangladesh_conf, models, tools
 
-days_to_load = 5
+days_to_load = 1
 
 
 def parse_date(old_date):
@@ -45,6 +45,7 @@ def create_open_in_podio(p_api, open_expa_id, managers, *args, **kwargs):
             151818116: {'value': referral_type},
             159966006: profile_complete,
             151832581: alignment,
+            151832580: alignment
             }
         if(person['dob']):
             attributes[154339943] = {'start_date': person['dob']}
@@ -1020,8 +1021,6 @@ def super_sync_ogx_finished(start_date):
     sync_bangladesh_ogx_finished(bd_api.get_interactions(**kwargs), ex_api=bd_api)
 
 def update_lc_alignments(page, per_page):
-    kwargs = {'interaction':'registered', 'start_date': start_date,
-        'officeID': 2010, 'program': 'ogx', 'end_date': end_date}
     bd_api = expaApi.ExpaApi(account='louise.kim@aiesec.net', fail_attempts=10)
     p_api = api.PodioApi(19156174)
     newly_registered = bd_api.get_recent_registered_with_alignment(page, per_page)
@@ -1037,7 +1036,7 @@ def update_lc_alignments(page, per_page):
             alignment_object = registered['lc_alignment']
             if alignment_object is None:
                 alignment = 'Unknown'
-            else
+            else:
                 alignment = alignment_object['keywords']
             item_id = search['results'][0]['id']
             print(item_id)
@@ -1045,7 +1044,7 @@ def update_lc_alignments(page, per_page):
             update_params = {
                 151832580: alignment
             }
-            # p_api.updateItem(item_id, update_params)
+            p_api.updateItem(item_id, update_params)
 
             #151832580
             #item = p_api.get_item(item_id, external_id=False)
